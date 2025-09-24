@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <title>Login com hCaptcha</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://hcaptcha.com/1/api.js" async defer></script>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 2rem; }
+    .card { max-width: 520px; border: 1px solid #ddd; border-radius: 12px; padding: 1rem; }
+    form { display: grid; gap: .75rem; }
+    input, button { padding: .65rem .8rem; }
+    .row { display: flex; gap: .5rem; align-items: center; }
+    .muted { opacity: .8; font-size: .9rem; }
+    .h-captcha { margin-top: .25rem; }
+    #msg { margin-top: .75rem; font-weight: 600; }
+    pre { background: #f6f8fa; padding: .75rem; border-radius: 8px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Login</h1>
+    <form id="form-login">
+      <input name="email" type="email" placeholder="Seu e-mail" required />
+      <input name="password" type="password" placeholder="Sua senha" required />
+      <div class="h-captcha" data-sitekey="5d3c4748-123c-4d98-a0be-6c9c00beb682"></div>
+      <button type="submit">Entrar</button>
+      <div class="row">
+        <button type="button" id="btn-profile">/api/profile</button>
+        <button type="button" id="btn-logout">Sair</button>
+      </div>
+      <div class="muted">Após logar, o token fica salvo no <code>localStorage</code> e é enviado no header <code>Authorization: Bearer &lt;token&gt;</code>.</div>
+      <div id="msg"></div>
+      <pre id="out"></pre>
+    </form>
+  </div>
+
+  <script>
+    const form = document.getElementById('form-login');
+    const msg  = document.getElementById('msg');
+    const out  = document.getElementById('out');
+    const btnProfile = document.getElementById('btn-profile');
+    const btnLogout  = document.getElementById('btn-logout');
+
+    function setMsg(text) { msg.textContent = text || ''; }
+    function setOut(obj) { out.textContent = obj ? JSON.stringify(obj, null, 2) : ''; }
+    function getToken() { return localStorage.getItem('jwt'); }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      setMsg('Enviando login...');
+      setOut();
+
+      const tokenCaptcha = document.querySelector('textarea[name="h-captcha-response"]')?.value;
+      if (!tokenCaptcha) { setMsg('Complete o hCaptcha.'); return; }
+
+      const formData = new FormData(form);
+      formData.append('hCaptchaToken', tokenCaptcha);
+
+      try {
+        const res  = await fetch('/api/login', { method: 'POST', body: formData });
+        const data = await res.json().catch(() => ({}));
+        if (data.ok && data.token) {
+          localStorage.setItem('jwt', data.token);
+          setMsg('✅ Logado com sucesso!');
+          setOut(data);
+        } else {
+          setMsg('❌ ' + (data.error || 'Falha no login.'));
+          setOut(data);
+        }
+      } catch (err) {
+        console.error(err);
+        setMsg('❌ Erro de rede.');
+      }
+    });
+
+    btnProfile.addEventListener('click', async () => {
+      setMsg('Chamando /api/profile...');
+      setOut();
+      const jwt = getToken();
+      if (!jwt) { setMsg('Faça login primeiro.'); return; }
+      try {
+        const res  = await fetch('/api/profile', { headers: { 'Authorization': 'Bearer ' + jwt } });
+        const data = await res.json().catch(() => ({}));
+        setMsg(res.ok ? '✅ OK' : '❌ Erro');
+        setOut(data);
+      } catch (e) {
+        console.error(e);
+        setMsg('❌ Erro de rede.');
+      }
+    });
+
+    btnLogout.addEventListener('click', () => {
+      localStorage.removeItem('jwt');
+      setMsg('Sessão encerrada.');
+      setOut();
+    });
+  </script>
+</body>
+</html>

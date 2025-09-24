@@ -1,0 +1,6 @@
+@Projeto_Hcaptchar_HostAddress = http://localhost:5113
+
+GET {{Projeto_Hcaptchar_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
