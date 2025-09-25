@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Projeto_Hcaptchar")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7f1b4a3fce9786fe3c6feded470e029de31d3b97")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+3ddbc370e622014e47390bf9a33995ac73d9454a")]
 [assembly: System.Reflection.AssemblyProductAttribute("Projeto_Hcaptchar")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Projeto_Hcaptchar")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
