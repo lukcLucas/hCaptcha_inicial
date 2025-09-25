@@ -44,3 +44,4 @@
 /home/lukc/Documentos/hCaptcha_inicial/Projeto_Hcaptchar/bin/Debug/net8.0/Microsoft.IdentityModel.Protocols.OpenIdConnect.dll
 /home/lukc/Documentos/hCaptcha_inicial/Projeto_Hcaptchar/bin/Debug/net8.0/Microsoft.IdentityModel.Tokens.dll
 /home/lukc/Documentos/hCaptcha_inicial/Projeto_Hcaptchar/bin/Debug/net8.0/System.IdentityModel.Tokens.Jwt.dll
+/home/lukc/Documentos/hCaptcha_inicial/Projeto_Hcaptchar/obj/Debug/net8.0/Projeto_Hcaptchar.sourcelink.json

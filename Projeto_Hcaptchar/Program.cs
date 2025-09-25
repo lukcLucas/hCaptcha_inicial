@@ -6,6 +6,8 @@ using System.IdentityModel.Tokens.Jwt;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
 
 public partial class Program
 {
@@ -22,7 +24,7 @@ public partial class Program
     {
         var builder = WebApplication.CreateBuilder(args);
 
-        // Configs
+        // --- Configs ---
         var hcaptchaSecret = builder.Configuration["HCAPTCHA_SECRET"];
         var jwtKey = builder.Configuration["JWT_KEY"];
         if (string.IsNullOrWhiteSpace(hcaptchaSecret))
@@ -30,10 +32,14 @@ public partial class Program
         if (string.IsNullOrWhiteSpace(jwtKey) || jwtKey.Length < 32)
             Console.WriteLine("ATENÇÃO: defina JWT_KEY (>=32 chars).");
 
-        // HttpClient
-        builder.Services.AddHttpClient("hcaptcha");
+        // --- HttpClient (hCaptcha) ---
+        builder.Services.AddHttpClient("hcaptcha", c =>
+        {
+            c.BaseAddress = new Uri("https://hcaptcha.com/");
+            c.Timeout = TimeSpan.FromSeconds(8);
+        });
 
-        // AuthN/AuthZ (JWT Bearer)
+        // --- AuthN/AuthZ (JWT Bearer) ---
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey ?? "dev_key_somente_para_demo_mude_isto_agora_mesmo_1234567890"));
         builder.Services
             .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -51,10 +57,35 @@ public partial class Program
             });
         builder.Services.AddAuthorization();
 
+        // --- CORS (libere somente o que precisa em prod) ---
+        builder.Services.AddCors(opt =>
+        {
+            opt.AddDefaultPolicy(policy =>
+                policy
+                    .WithOrigins("http://localhost:5113", "http://localhost:5000") // ajuste
+                    .AllowAnyHeader()
+                    .AllowAnyMethod()
+                    .AllowCredentials());
+        });
+
+        // --- Rate Limiting básico (evita brute force) ---
+        builder.Services.AddRateLimiter(opt =>
+        {
+            opt.AddFixedWindowLimiter("login", o =>
+            {
+                o.PermitLimit = 10;                  // 10tentativas
+                o.Window = TimeSpan.FromMinutes(1);  // por minuto
+                o.QueueLimit = 0;
+            });
+        });
+
         var app = builder.Build();
 
         app.UseDefaultFiles();
         app.UseStaticFiles();
+
+        app.UseCors();
+        app.UseRateLimiter();
 
         app.UseAuthentication();
         app.UseAuthorization();
@@ -78,14 +109,23 @@ public partial class Program
 
             // 1) Verifica hCaptcha
             var client = httpClientFactory.CreateClient("hcaptcha");
-            var verifyForm = new FormUrlEncodedContent(new[]
+            using var verifyForm = new FormUrlEncodedContent(new[]
             {
                 new KeyValuePair<string,string>("secret", app.Configuration["HCAPTCHA_SECRET"] ?? ""),
                 new KeyValuePair<string,string>("response", token),
                 new KeyValuePair<string,string>("remoteip", request.HttpContext.Connection.RemoteIpAddress?.ToString() ?? "")
             });
 
-            var resp = await client.PostAsync("https://hcaptcha.com/siteverify", verifyForm);
+            HttpResponseMessage resp;
+            try
+            {
+                resp = await client.PostAsync("siteverify", verifyForm);
+            }
+            catch (TaskCanceledException)
+            {
+                return Results.Json(new { ok = false, error = "Timeout ao verificar hCaptcha." });
+            }
+
             if (resp.StatusCode != HttpStatusCode.OK)
                 return Results.Json(new { ok = false, error = "Falha ao verificar hCaptcha." });
 
@@ -96,10 +136,14 @@ public partial class Program
                 return Results.Json(new { ok = false, error = $"hCaptcha inválido ({codes})." });
             }
 
+            // (Opcional) Confere hostname esperado (se seu site roda em domínio fixo)
+            // var expectedHost = "seu-dominio.com"; 
+            // if (!string.Equals(verify.hostname, expectedHost, StringComparison.OrdinalIgnoreCase))
+            //     return Results.Json(new { ok = false, error = "hCaptcha hostname não confere." });
+
             // 2) Autenticação (DEMO – troque por sua base/DB com senha hash!)
-            // Usuário demo:
-            const string demoEmail = "admin@example.com";
-            const string demoPass  = "P@ssw0rd!"; // NÃO use isso em produção
+            const string demoEmail = "bastoslucas55@gmail.com";
+            const string demoPass  = "admin123@"; // NÃO use isso em produção
             if (!email.Equals(demoEmail, StringComparison.OrdinalIgnoreCase) || password != demoPass)
                 return Results.Json(new { ok = false, error = "Credenciais inválidas." });
 
@@ -107,7 +151,8 @@ public partial class Program
             var jwt = CreateJwt(email, key);
 
             return Results.Json(new { ok = true, token = jwt, user = new { email } });
-        });
+        })
+        .RequireRateLimiting("login");
 
         // GET /api/profile (protegida)
         app.MapGet("/api/profile", (ClaimsPrincipal user) =>
@@ -122,26 +167,26 @@ public partial class Program
         }).RequireAuthorization();
 
         await app.RunAsync();
-    }
 
-    // Helper: cria JWT
-    private static string CreateJwt(string email, SymmetricSecurityKey key)
-    {
-        var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-        var claims = new[]
+        // ===== Local function =====
+        static string CreateJwt(string email, SymmetricSecurityKey key)
         {
-            new Claim(ClaimTypes.NameIdentifier, email),
-            new Claim(ClaimTypes.Name, email),
-            new Claim(ClaimTypes.Role, "user")
-        };
-        var token = new JwtSecurityToken(
-            issuer: null,
-            audience: null,
-            claims: claims,
-            notBefore: DateTime.UtcNow,
-            expires: DateTime.UtcNow.AddHours(2),
-            signingCredentials: creds
-        );
-        return new JwtSecurityTokenHandler().WriteToken(token);
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+            var claims = new[]
+            {
+                new Claim(ClaimTypes.NameIdentifier, email),
+                new Claim(ClaimTypes.Name, email),
+                new Claim(ClaimTypes.Role, "user")
+            };
+            var token = new JwtSecurityToken(
+                issuer: null,
+                audience: null,
+                claims: claims,
+                notBefore: DateTime.UtcNow,
+                expires: DateTime.UtcNow.AddHours(2),
+                signingCredentials: creds
+            );
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
     }
 }
